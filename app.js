@@ -149,8 +149,14 @@ function vueSommaire(a) {
 }
 
 // ---------- Écran 4 : fiche d'une partie ----------
+function nbReponses(p) {
+  return defPartie(p.cle).questions.filter((q, i) => q.t !== "titre" && (p.rep["q" + i] !== undefined || p.rep["q" + i + "-autre"])).length;
+}
 function vueQuestion(p, q, i) {
   const k = "q" + i, v = p.rep[k];
+  if (q.t === "titre") return `<h3 class="q-intertitre">${esc(q.q)}</h3>`;
+  if (q.t === "matrice") return `<div class="q"><div class="q-titre">${esc(q.q)}</div><div style="overflow-x:auto"><table class="grille"><thead><tr><th scope="col">&nbsp;</th>${q.cols.map(c => `<th scope="col">${esc(c)}</th>`).join("")}</tr></thead><tbody>
+    ${q.o.map(r => `<tr><th scope="row" style="font-weight:normal">${esc(r)}</th>${q.cols.map(c => `<td><input type="checkbox" data-q="${k}" data-m="${esc(r)}" data-v="${esc(c)}" ${((v || {})[r] || []).includes(c) ? "checked" : ""} aria-label="${esc(r)} : ${esc(c)}"></td>`).join("")}</tr>`).join("")}</tbody></table></div></div>`;
   if (q.t === "on") return `<div class="q"><div class="q-titre" id="lb-${k}">${esc(q.q)}</div><div class="choix" role="group" aria-labelledby="lb-${k}">
     ${["Oui", "Non", "Non vérifié"].map(o => `<button type="button" class="btn-petit" data-q="${k}" data-v="${o}" aria-pressed="${v === o}">${o}</button>`).join("")}</div></div>`;
   if (q.t === "num") return `<div class="q"><label class="q-titre" for="${k}">${esc(q.q)}</label><div class="num"><input id="${k}" type="number" inputmode="decimal" step="any" data-q="${k}" value="${esc(v)}"><span>${esc(q.u)}</span></div></div>`;
@@ -158,18 +164,25 @@ function vueQuestion(p, q, i) {
   if (q.t === "liste") return `<fieldset class="q cases" style="border:0;margin:0;padding:10px 0"><legend class="q-titre">${esc(q.q)}</legend>
     ${q.o.map((o, j) => `<label><input type="checkbox" data-q="${k}" data-v="${esc(o)}" ${(v || []).includes(o) ? "checked" : ""}> ${esc(o)}</label>`).join("")}
     <input type="text" data-q="${k}-autre" placeholder="Autres…" value="${esc(p.rep[k + "-autre"])}" aria-label="${esc(q.q)} : autres"></fieldset>`;
-  if (q.t === "qual") return `<div class="q"><div class="q-titre">${esc(q.q)}</div><table class="grille"><thead><tr><th scope="col">Critère</th><th scope="col">Très bien</th><th scope="col">Moyen</th><th scope="col">Passable</th></tr></thead><tbody>
-    ${q.o.map((c, j) => `<tr><th scope="row" style="font-weight:normal">${esc(c)}</th>${["Très bien", "Moyen", "Passable"].map(n => `<td><input type="radio" name="${k}-${j}" data-q="${k}" data-c="${esc(c)}" data-v="${n}" ${(v || {})[c] === n ? "checked" : ""} aria-label="${esc(c)} : ${n}"></td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  if (q.t === "qual") return `<div class="q"><div class="q-titre">${esc(q.q)}</div><table class="grille"><thead><tr><th scope="col">Critère</th>${q.cols.map(c => `<th scope="col">${esc(c)}</th>`).join("")}</tr></thead><tbody>
+    ${q.o.map((c, j) => `<tr><th scope="row" style="font-weight:normal">${esc(c)}</th>${q.cols.map(n => `<td><input type="radio" name="${k}-${j}" data-q="${k}" data-c="${esc(c)}" data-v="${n}" ${(v || {})[c] === n ? "checked" : ""} aria-label="${esc(c)} : ${n}"></td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   return "";
 }
 function vuePartie(a, p) {
   if (!p) return aller(`#/audit/${a.id}`);
   const d = defPartie(p.cle), rappel = RAPPELS[p.cle];
+  const nbQ = d.questions.filter(q => q.t !== "titre").length, nbRep = nbReponses(p);
+  const onglet = p.onglet && (p.onglet !== "questionnaire" || nbQ) ? p.onglet : "constats";
   document.title = nomPartie(p) + " – Audit terrain";
   $app.innerHTML = `
     <a class="retour" href="#/audit/${a.id}">← Parties de l'audit</a>
     <h1>${esc(nomPartie(p))}</h1>
     <form id="partie">
+      <div class="onglets" role="tablist" aria-label="Contenu de la partie">
+        ${[["constats", "Constats"], ...(nbQ ? [["questionnaire", `Questionnaire (${nbRep}/${nbQ})`]] : []), ["photos", `Photos (${p.photos.length})`]].map(([k, l]) =>
+          `<button type="button" role="tab" id="tab-${k}" data-onglet="${k}" aria-controls="pan-${k}" aria-selected="${onglet === k}">${l}</button>`).join("")}
+      </div>
+      <div role="tabpanel" id="pan-constats" aria-labelledby="tab-constats" ${onglet === "constats" ? "" : "hidden"}>
       <label class="cases" style="font-weight:normal;display:flex;gap:8px"><input type="checkbox" data-f="nonVisite" ${p.nonVisite ? "checked" : ""}> Non visité / non vérifié</label>
       ${rappel ? `<div class="rappel"><h3>Rappel théorique proposé</h3><p>${esc(rappel)}</p>
         <div class="choix" role="group" aria-label="Inclure ce rappel dans l'audit ?">
@@ -183,7 +196,11 @@ function vuePartie(a, p) {
       <label for="remarques">Remarques pour la rédaction <span class="aide">(facultatif : contexte, exigence, ton)</span></label>
       ${boutonMicro("remarques")}
       <textarea id="remarques" data-f="remarques" style="min-height:70px">${esc(p.remarques)}</textarea>
-      ${d.questions.length ? `<details><summary>Questionnaire (facultatif) — ${d.questions.length} questions</summary><div>${d.questions.map((q, i) => vueQuestion(p, q, i)).join("")}</div></details>` : ""}
+      </div>
+      ${nbQ ? `<div role="tabpanel" id="pan-questionnaire" aria-labelledby="tab-questionnaire" ${onglet === "questionnaire" ? "" : "hidden"}>
+        <p class="aide">Tout est facultatif : remplissez ce qui vous est utile, en complément de vos constats.</p>
+        ${d.questions.map((q, i) => vueQuestion(p, q, i)).join("")}</div>` : ""}
+      <div role="tabpanel" id="pan-photos" aria-labelledby="tab-photos" ${onglet === "photos" ? "" : "hidden"}>
       <h2>Photos</h2>
       <label class="btn btn-principal" for="prise-photo" style="display:inline-block">📷 Prendre ou ajouter une photo</label>
       <input id="prise-photo" type="file" accept="image/*" capture="environment" multiple style="position:absolute;left:-9999px">
@@ -196,6 +213,7 @@ function vuePartie(a, p) {
         <label class="cases" style="font-weight:normal;display:flex;gap:6px;margin:4px 0"><input type="checkbox" data-ret="${i}" ${ph.retenue ? "checked" : ""}> Illustre le texte</label>
         <input type="text" data-leg="${i}" value="${esc(ph.legende)}" placeholder="Légende" aria-label="Légende de la photo ${i + 1}">
         <button type="button" class="btn-petit" data-suppr="${i}">Supprimer</button></div>`).join("")}</div>
+      </div>
       <div class="barre-bas">
         <button type="button" class="btn-principal" id="terminer">${p.termine ? "Rouvrir la partie" : "Marquer comme terminée"}</button>
         <a class="btn" href="#/audit/${a.id}">Retour aux parties</a></div>
@@ -203,19 +221,30 @@ function vuePartie(a, p) {
   const f = $app.querySelector("#partie");
   f.addEventListener("input", e => {
     const t = e.target, ds = t.dataset;
-    queueMicrotask(() => { const z = f.querySelector("#alertes"), h = vueAlertes(p); if (z.innerHTML !== h) z.innerHTML = h; });
+    queueMicrotask(majCompteurs);
     if (ds.f === "nonVisite") p.nonVisite = t.checked;
     else if (ds.f) p[ds.f] = t.value;
     else if (ds.rub) p.rubriques[ds.rub] = t.value;
     else if (ds.leg) p.photos[+ds.leg].legende = t.value;
     else if (ds.ret) p.photos[+ds.ret].retenue = t.checked;
+    else if (ds.q && ds.m) { const m = Object.assign({}, p.rep[ds.q]); const l = new Set(m[ds.m] || []); t.checked ? l.add(ds.v) : l.delete(ds.v); l.size ? m[ds.m] = [...l] : delete m[ds.m]; Object.keys(m).length ? p.rep[ds.q] = m : delete p.rep[ds.q]; }
     else if (ds.q && t.type === "checkbox") { const l = new Set(p.rep[ds.q] || []); t.checked ? l.add(ds.v) : l.delete(ds.v); l.size ? p.rep[ds.q] = [...l] : delete p.rep[ds.q]; }
     else if (ds.q && t.type === "radio") { p.rep[ds.q] = Object.assign(p.rep[ds.q] || {}, { [ds.c]: ds.v }); }
     else if (ds.q) { t.value ? p.rep[ds.q] = t.value : delete p.rep[ds.q]; }
   });
+  const majCompteurs = () => {
+    const z = f.querySelector("#alertes"), h = vueAlertes(p); if (z.innerHTML !== h) z.innerHTML = h;
+    const tq = f.querySelector("#tab-questionnaire"); if (tq) tq.textContent = `Questionnaire (${nbReponses(p)}/${nbQ})`;
+  };
   f.addEventListener("click", e => {
     const b = e.target.closest("button"); if (!b) return;
-    if (b.dataset.rappel) { p.rappel = b.dataset.rappel === "true"; f.querySelectorAll("[data-rappel]").forEach(x => x.setAttribute("aria-pressed", x === b)); }
+    queueMicrotask(majCompteurs);
+    if (b.dataset.onglet) {
+      p.onglet = b.dataset.onglet;
+      f.querySelectorAll("[data-onglet]").forEach(x => x.setAttribute("aria-selected", x === b));
+      f.querySelectorAll("[role=tabpanel]").forEach(x => x.hidden = x.id !== "pan-" + p.onglet);
+    }
+    else if (b.dataset.rappel) { p.rappel = b.dataset.rappel === "true"; f.querySelectorAll("[data-rappel]").forEach(x => x.setAttribute("aria-pressed", x === b)); }
     else if (b.dataset.q) { const on = b.getAttribute("aria-pressed") !== "true"; on ? p.rep[b.dataset.q] = b.dataset.v : delete p.rep[b.dataset.q]; b.parentNode.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", on && x === b)); }
     else if (b.dataset.suppr) { p.photos.splice(+b.dataset.suppr, 1); vuePartie(a, p); }
     else if (b.dataset.micro) basculerMicro(b, f.querySelector("#" + b.dataset.micro));
@@ -352,7 +381,9 @@ function exporter(a, parties, toutes) {
     const rep = [];
     d.questions.forEach((q, n) => {
       const v = p.rep["q" + n], autre = p.rep["q" + n + "-autre"];
-      if (q.t === "qual" && v) rep.push(`- ${q.q} : ${Object.entries(v).map(([c, x]) => `${c} ${x}`).join(", ")}`);
+      if (q.t === "titre") return;
+      if (q.t === "matrice" && v) rep.push(`- ${q.q} : ${Object.entries(v).map(([r, c]) => `${r} (${c.join(", ")})`).join(" ; ")}`);
+      else if (q.t === "qual" && v) rep.push(`- ${q.q} : ${Object.entries(v).map(([c, x]) => `${c} ${x}`).join(", ")}`);
       else if (q.t === "liste" && (v || autre)) rep.push(`- ${q.q} : ${[...(v || []), autre].filter(Boolean).join(", ")}`);
       else if (v) rep.push(`- ${q.q} : ${v}${q.u ? " " + q.u : ""}`);
     });

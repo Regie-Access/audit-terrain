@@ -52,3 +52,7 @@ pre.apercu { white-space: pre-wrap; background: #fff; border: 1px solid var(--gr
 .barre-bas { margin-top: 16px; padding: 10px 0; display: flex; gap: 8px; flex-wrap: wrap; }
 :focus-visible { outline: 3px solid var(--bleu-texte); outline-offset: 2px; }
 .btn-micro { margin: 4px 0 8px; } .btn-micro[aria-pressed=true] { background: var(--rouge); border-color: var(--rouge); color: #fff; }
+.onglets { display: flex; gap: 4px; border-bottom: 3px solid var(--bleu-ra); margin: 4px 0 12px; overflow-x: auto; }
+.onglets button { border: 2px solid var(--gris-clair); border-bottom: 0; border-radius: 4px 4px 0 0; background: #fff; color: var(--gris-ra); white-space: nowrap; padding: 10px 12px; }
+.onglets button[aria-selected=true] { background: var(--gris-ra); border-color: var(--gris-ra); color: #fff; }
+.q-intertitre { color: var(--bleu-texte); margin: 20px 0 4px; padding-top: 8px; border-top: 2px solid var(--gris-clair); }
