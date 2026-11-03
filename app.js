@@ -11,7 +11,6 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const slug = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const defPartie = cle => PARTIES.find(p => p.cle === cle);
 const trouverAudit = id => etat.audits.find(a => a.id === id);
-const PRIORITES = { "": "Priorité ?", "immédiat": "Immédiat", "amont": "À préparer en amont", "structurant": "Structurant" };
 
 // ---------- Données d'exemple pour la maquette ----------
 function auditExemple() {
@@ -19,9 +18,7 @@ function auditExemple() {
   Object.assign(a.ident, { titre: "Audit exemple", evenement: "Festival exemple", edition: "2026", lieu: "Ville exemple", date_evaluation: new Date().toISOString().slice(0, 10), auditeurs: "Denis LEROY" });
   ajouterPartie(a, "B:stationnement", "Parking P1");
   const p = ajouterPartie(a, "F:plateforme", "Scène principale");
-  p.obs = "Plateforme de 6 m sur 4 m, rampe côté jardin.";
-  p.defauts = [{ t: "Pas de chasse-roues sur la rampe", p: "immédiat" }];
-  p.amelio = "Ajouter des chasse-roues des deux côtés de la rampe.";
+  p.obs = "Plateforme de 6 m sur 4 m, rampe côté jardin, pas de chasse-roues.";
   return a;
 }
 function creerAudit() {
@@ -30,7 +27,7 @@ function creerAudit() {
   return a;
 }
 function ajouterPartie(audit, cle, instance) {
-  const p = { id: nouvelId(), cle, instance: instance || "", rappel: null, nonVisite: false, obs: "", defauts: [{ t: "", p: "" }], amelio: "", remarques: "", rubriques: {}, rep: {}, photos: [] };
+  const p = { id: nouvelId(), cle, instance: instance || "", rappel: null, nonVisite: false, obs: "", remarques: "", rubriques: {}, rep: {}, photos: [] };
   audit.parties.push(p);
   return p;
 }
@@ -39,7 +36,7 @@ function nomPartie(p) {
   return d.libre ? (p.instance || "Partie libre") : d.nom + (p.instance ? " — " + p.instance : "");
 }
 function statut(p) {
-  const rempli = p.obs || p.amelio || p.remarques || p.photos.length || p.defauts.some(d => d.t) || Object.keys(p.rep).length || p.nonVisite;
+  const rempli = p.obs || p.remarques || p.photos.length || Object.keys(p.rep).length || p.nonVisite;
   if (!rempli) return ["Vide", "p-vide"];
   return p.termine ? ["Terminée", "p-ok"] : ["Commencée", "p-cours"];
 }
@@ -178,19 +175,13 @@ function vuePartie(a, p) {
         <div class="choix" role="group" aria-label="Inclure ce rappel dans l'audit ?">
           <button type="button" class="btn-petit" data-rappel="true" aria-pressed="${p.rappel === true}">À inclure</button>
           <button type="button" class="btn-petit" data-rappel="false" aria-pressed="${p.rappel === false}">Ne pas inclure</button></div></div>` : ""}
-      <p class="aide">Pour dicter : touchez une zone de texte puis le micro du clavier.</p>
       <h2><label for="obs" style="margin:0">Observations et constats</label></h2>
-      <textarea id="obs" data-f="obs">${esc(p.obs)}</textarea>
-      ${(d.rubriques || []).map((r, i) => `<label for="rub${i}">${esc(r)}</label><textarea id="rub${i}" data-rub="${esc(r)}" style="min-height:70px">${esc(p.rubriques[r])}</textarea>`).join("")}
-      <h2 class="titre-defauts">Défauts relevés</h2>
-      <p class="aide">Un défaut par ligne. Priorité facultative.</p>
-      <div id="defauts">${p.defauts.map((x, i) => `<div class="defaut">
-        <input type="text" data-def="${i}" value="${esc(x.t)}" aria-label="Défaut ${i + 1}">
-        <select data-prio="${i}" aria-label="Priorité du défaut ${i + 1}">${Object.entries(PRIORITES).map(([v, l]) => `<option value="${v}" ${x.p === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>`).join("")}</div>
-      <button type="button" class="btn-petit" id="plus-defaut">+ Ajouter un défaut</button>
-      <h2 class="titre-amelio"><label for="amelio" style="margin:0">Améliorations possibles</label></h2>
-      <textarea id="amelio" data-f="amelio">${esc(p.amelio)}</textarea>
+      ${boutonMicro("obs")}
+      <textarea id="obs" data-f="obs" placeholder="Dictez ou écrivez tout ce que vous constatez : mesures, lieux, ce qui fonctionne, ce qui pose problème.">${esc(p.obs)}</textarea>
+      ${(d.rubriques || []).map((r, i) => `<label for="rub${i}">${esc(r)}</label>${boutonMicro("rub" + i)}<textarea id="rub${i}" data-rub="${esc(r)}" style="min-height:70px">${esc(p.rubriques[r])}</textarea>`).join("")}
+      <div id="alertes" aria-live="polite">${vueAlertes(p)}</div>
       <label for="remarques">Remarques pour la rédaction <span class="aide">(facultatif : contexte, exigence, ton)</span></label>
+      ${boutonMicro("remarques")}
       <textarea id="remarques" data-f="remarques" style="min-height:70px">${esc(p.remarques)}</textarea>
       ${d.questions.length ? `<details><summary>Questionnaire (facultatif) — ${d.questions.length} questions</summary><div>${d.questions.map((q, i) => vueQuestion(p, q, i)).join("")}</div></details>` : ""}
       <h2>Photos</h2>
@@ -211,11 +202,10 @@ function vuePartie(a, p) {
   const f = $app.querySelector("#partie");
   f.addEventListener("input", e => {
     const t = e.target, ds = t.dataset;
+    queueMicrotask(() => { const z = f.querySelector("#alertes"), h = vueAlertes(p); if (z.innerHTML !== h) z.innerHTML = h; });
     if (ds.f === "nonVisite") p.nonVisite = t.checked;
     else if (ds.f) p[ds.f] = t.value;
     else if (ds.rub) p.rubriques[ds.rub] = t.value;
-    else if (ds.def) p.defauts[+ds.def].t = t.value;
-    else if (ds.prio) p.defauts[+ds.prio].p = t.value;
     else if (ds.leg) p.photos[+ds.leg].legende = t.value;
     else if (ds.q && t.type === "checkbox") { const l = new Set(p.rep[ds.q] || []); t.checked ? l.add(ds.v) : l.delete(ds.v); l.size ? p.rep[ds.q] = [...l] : delete p.rep[ds.q]; }
     else if (ds.q && t.type === "radio") { p.rep[ds.q] = Object.assign(p.rep[ds.q] || {}, { [ds.c]: ds.v }); }
@@ -226,7 +216,7 @@ function vuePartie(a, p) {
     if (b.dataset.rappel) { p.rappel = b.dataset.rappel === "true"; f.querySelectorAll("[data-rappel]").forEach(x => x.setAttribute("aria-pressed", x === b)); }
     else if (b.dataset.q) { const on = b.getAttribute("aria-pressed") !== "true"; on ? p.rep[b.dataset.q] = b.dataset.v : delete p.rep[b.dataset.q]; b.parentNode.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", on && x === b)); }
     else if (b.dataset.suppr) { p.photos.splice(+b.dataset.suppr, 1); vuePartie(a, p); }
-    else if (b.id === "plus-defaut") { p.defauts.push({ t: "", p: "" }); vuePartie(a, p); const ins = $app.querySelectorAll("[data-def]"); ins[ins.length - 1].focus(); }
+    else if (b.dataset.micro) basculerMicro(b, f.querySelector("#" + b.dataset.micro));
     else if (b.id === "terminer") { p.termine = !p.termine; aller(`#/audit/${a.id}`); }
   });
   const cap = f.querySelector("#capture-page");
@@ -243,6 +233,76 @@ function vuePartie(a, p) {
     for (const fichier of e.target.files) p.photos.push(await reduirePhoto(fichier, a, p));
     vuePartie(a, p);
   });
+}
+
+// ---------- Dictée ----------
+// Bouton micro intégré quand le navigateur sait reconnaître la voix (Chrome, Edge, Safari).
+// Sinon, on rappelle la dictée du système (clavier du téléphone, Fn Fn sur Mac, Windows + H).
+const Reco = window.SpeechRecognition || window.webkitSpeechRecognition;
+let micro = null;
+function aideDictee() {
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|Android/.test(ua)) return "Touchez la zone de texte, puis le micro du clavier.";
+  if (/Mac/.test(ua)) return "Cliquez dans la zone de texte, puis appuyez deux fois sur la touche Fn (ou 🌐) pour dicter.";
+  if (/Windows/.test(ua)) return "Cliquez dans la zone de texte, puis appuyez sur Windows + H pour dicter.";
+  return "Utilisez la dictée de votre appareil dans la zone de texte.";
+}
+function boutonMicro(cible) {
+  return Reco ? `<button type="button" class="btn-petit btn-micro" data-micro="${cible}" aria-pressed="false">🎤 Dicter</button>`
+              : `<p class="aide">🎤 ${aideDictee()}</p>`;
+}
+function etatMicro(b, actif) { b.setAttribute("aria-pressed", String(actif)); b.textContent = actif ? "⏹ Arrêter la dictée" : "🎤 Dicter"; }
+function basculerMicro(b, zone) {
+  if (micro) { const ancien = micro; micro = null; ancien.r.stop(); etatMicro(ancien.b, false); if (ancien.b === b) return; }
+  const r = new Reco(); r.lang = "fr-FR"; r.continuous = true; r.interimResults = false;
+  micro = { r, b };
+  etatMicro(b, true);
+  r.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) {
+      const t = e.results[i][0].transcript.trim(); if (!t) continue;
+      zone.value = (zone.value ? zone.value.replace(/\s*$/, " ") : "") + t.charAt(0).toUpperCase() + t.slice(1) + ".";
+      zone.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  };
+  r.onerror = e => { if (e.error === "not-allowed" || e.error === "service-not-allowed") alert("Le micro est refusé. Autorisez-le dans les réglages du navigateur, ou " + aideDictee().charAt(0).toLowerCase() + aideDictee().slice(1)); };
+  r.onend = () => { if (micro && micro.r === r) { try { r.start(); } catch (_) { micro = null; etatMicro(b, false); } } };
+  r.start();
+}
+window.addEventListener("hashchange", () => { if (micro) { const m = micro; micro = null; m.r.stop(); } });
+
+// ---------- Alertes « normes » : détectées hors ligne dans le texte dicté et les mesures ----------
+// Valeurs indicatives tirées des rappels de norme du questionnaire. Elles signalent, elles ne jugent pas :
+// le rédacteur (Claude) vérifie et rédige.
+const REGLES = [
+  { mots: /pente|rampe|plan inclin/, unite: "%", test: v => v > 5, defaut: v => `Pente mesurée à ${v} %, supérieure à 5 %`, amelio: "Ramener la pente à 5 % maximum, ou prévoir des paliers de repos." },
+  { mots: /cheminement|passage|allée|couloir|circulation/, unite: "m", test: v => v < 1.4, defaut: v => `Largeur de passage de ${fmt(v)} m, inférieure à 1,40 m`, amelio: "Dégager une largeur libre de 1,40 m (1,20 m exceptionnellement)." },
+  { mots: /porte|entrée/, unite: "m", test: v => v < 0.8, defaut: v => `Porte ou passage d'entrée de ${fmt(v * 100)} cm, inférieur à 80 cm`, amelio: "Élargir le passage à 80 cm minimum (90 cm recommandés)." },
+  { mots: /marche/, unite: "m", test: v => v > 0.16, defaut: v => `Hauteur de marche de ${fmt(v * 100)} cm, supérieure à 16 cm`, amelio: "Compenser les marches par une rampe ou un plan incliné." },
+  { mots: /comptoir|guichet|caisse/, unite: "m", test: v => v > 0.8, defaut: v => `Comptoir à ${fmt(v * 100)} cm de haut, au-dessus de 80 cm`, amelio: "Prévoir une partie de comptoir à 80 cm maximum, avec vide pour les jambes." },
+  { mots: /hauteur libre|obstacle|branche|panneau/, unite: "m", test: v => v < 2, defaut: v => `Hauteur libre de ${fmt(v)} m, inférieure à 2 m`, amelio: "Dégager une hauteur libre de 2 m sur le cheminement." }
+];
+const fmt = v => String(Math.round(v * 100) / 100).replace(".", ",");
+function alertes(p) {
+  const d = defPartie(p.cle);
+  const textes = [p.obs, ...Object.values(p.rubriques), ...d.questions.map((q, i) => q.t === "num" && p.rep["q" + i] ? `${q.q} ${p.rep["q" + i]} ${q.u}` : "")];
+  const res = [], vus = new Set();
+  for (const phrase of textes.join(". ").toLowerCase().split(/[.;\n!?]/)) {
+    const re = /(\d+(?:[.,]\d+)?)\s*(%|pour ?cents?|cm|centim[eè]tres?|m(?:[eè]tres?)?)(?![a-zé])/g; let m;
+    while ((m = re.exec(phrase))) {
+      const avant = phrase.slice(Math.max(0, m.index - 50), m.index);
+      let v = parseFloat(m[1].replace(",", ".")), u = m[2];
+      const unite = /%|pour/.test(u) ? "%" : "m"; if (/^c/.test(u)) v /= 100;
+      const r = REGLES.find(r => r.unite === unite && r.mots.test(avant));
+      if (r && r.test(v)) { const t = r.defaut(v); if (!vus.has(t)) { vus.add(t); res.push({ defaut: t, amelio: r.amelio }); } }
+    }
+  }
+  return res;
+}
+function vueAlertes(p) {
+  const a = alertes(p); if (!a.length) return "";
+  return `<div class="carte" style="border-left:6px solid var(--rouge)"><h3>Points à vérifier selon les normes</h3>
+    <p class="aide">Détectés automatiquement dans vos observations, sans Internet. Ils seront transmis au rédacteur.</p>
+    <ul>${a.map(x => `<li><span class="titre-defauts"><b>${esc(x.defaut)}</b></span><br><span class="titre-amelio">${esc(x.amelio)}</span></li>`).join("")}</ul></div>`;
 }
 
 // Photos : réduites à 1600 px côté long (taille adaptée au mail et à Word), nommées par partie.
@@ -284,9 +344,8 @@ function exporter(a, parties) {
     if (p.nonVisite) L.push("> Non visité / non vérifié", "");
     const bloc = (t, txt) => { if (txt && txt.trim()) L.push(`### ${t}`, txt.trim(), ""); };
     bloc("Observation terrain", [p.obs, ...Object.entries(p.rubriques).filter(([, v]) => v).map(([k, v]) => `**${k}** : ${v}`)].filter(Boolean).join("\n\n"));
-    const defs = p.defauts.filter(x => x.t.trim());
-    if (defs.length) L.push("### Défauts relevés", ...defs.map(x => `- ${x.p ? `[${x.p}] ` : ""}${x.t.trim()}`), "");
-    bloc("Améliorations possibles", p.amelio);
+    const al = alertes(p);
+    if (al.length) L.push("### Points à vérifier selon les normes (détection automatique)", ...al.map(x => `- ${x.defaut} → ${x.amelio}`), "");
     bloc("Remarques pour la rédaction", p.remarques);
     const rep = [];
     d.questions.forEach((q, n) => {
