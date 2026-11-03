@@ -258,11 +258,11 @@ function vuePartie(a, p) {
     const ph = pdf ? { blob: fi, url: URL.createObjectURL(fi) } : await reduirePhoto(fi, a, p);
     Object.assign(ph, { page: true, pdf, retenue: true, nom: `${codeAudit(a)}_A-preparer-page-accessibilite_${String(n).padStart(2, "0")}.${pdf ? "pdf" : "jpg"}`,
       legende: `Page accessibilité${url ? ", " + url : ""}, consultée le ${new Date().toLocaleDateString("fr-FR")}` });
-    p.photos.push(ph); vuePartie(a, p);
+    p.photos.push(ph); p.onglet = "photos"; vuePartie(a, p);
   });
   f.querySelector("#prise-photo").addEventListener("change", async e => {
     for (const fichier of e.target.files) p.photos.push(await reduirePhoto(fichier, a, p));
-    vuePartie(a, p);
+    p.onglet = "photos"; vuePartie(a, p);
   });
 }
 
