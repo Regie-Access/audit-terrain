@@ -193,6 +193,7 @@ function vuePartie(a, p) {
         <label class="btn" for="capture-page" style="display:inline-block;margin-top:10px">Joindre la capture ou le PDF</label>
         <input id="capture-page" type="file" accept="image/*,application/pdf" style="position:absolute;left:-9999px"></div>` : ""}
       <div class="photos">${p.photos.map((ph, i) => `<div class="photo">${ph.pdf ? `<div class="carte" style="aspect-ratio:4/3;margin:0">PDF</div>` : `<img src="${ph.url}" alt="${esc(ph.legende || "Photo " + (i + 1))}">`}<div class="nom">${esc(ph.nom)}</div>
+        <label class="cases" style="font-weight:normal;display:flex;gap:6px;margin:4px 0"><input type="checkbox" data-ret="${i}" ${ph.retenue ? "checked" : ""}> Illustre le texte</label>
         <input type="text" data-leg="${i}" value="${esc(ph.legende)}" placeholder="Légende" aria-label="Légende de la photo ${i + 1}">
         <button type="button" class="btn-petit" data-suppr="${i}">Supprimer</button></div>`).join("")}</div>
       <div class="barre-bas">
@@ -207,6 +208,7 @@ function vuePartie(a, p) {
     else if (ds.f) p[ds.f] = t.value;
     else if (ds.rub) p.rubriques[ds.rub] = t.value;
     else if (ds.leg) p.photos[+ds.leg].legende = t.value;
+    else if (ds.ret) p.photos[+ds.ret].retenue = t.checked;
     else if (ds.q && t.type === "checkbox") { const l = new Set(p.rep[ds.q] || []); t.checked ? l.add(ds.v) : l.delete(ds.v); l.size ? p.rep[ds.q] = [...l] : delete p.rep[ds.q]; }
     else if (ds.q && t.type === "radio") { p.rep[ds.q] = Object.assign(p.rep[ds.q] || {}, { [ds.c]: ds.v }); }
     else if (ds.q) { t.value ? p.rep[ds.q] = t.value : delete p.rep[ds.q]; }
@@ -225,7 +227,7 @@ function vuePartie(a, p) {
     const url = f.querySelector("#url-page").value.trim(); if (url) a.ident.page_accessibilite = url;
     const n = p.photos.filter(x => x.page).length + 1, pdf = fi.type === "application/pdf";
     const ph = pdf ? { blob: fi, url: URL.createObjectURL(fi) } : await reduirePhoto(fi, a, p);
-    Object.assign(ph, { page: true, pdf, nom: `${codeAudit(a)}_A-preparer-page-accessibilite_${String(n).padStart(2, "0")}.${pdf ? "pdf" : "jpg"}`,
+    Object.assign(ph, { page: true, pdf, retenue: true, nom: `${codeAudit(a)}_A-preparer-page-accessibilite_${String(n).padStart(2, "0")}.${pdf ? "pdf" : "jpg"}`,
       legende: `Page accessibilité${url ? ", " + url : ""}, consultée le ${new Date().toLocaleDateString("fr-FR")}` });
     p.photos.push(ph); vuePartie(a, p);
   });
@@ -326,7 +328,7 @@ function reduirePhoto(fichier, a, p) {
 
 // ---------- Écran 5 : envoi ----------
 // Format défini dans format-export.md (partagé avec le rédacteur d'audit).
-function exporter(a, parties) {
+function exporter(a, parties, toutes) {
   const i = a.ident, L = ["---"];
   const y = (k, v) => { if (v) L.push(`${k}: ${JSON.stringify(v)}`); };
   y("titre", i.titre); y("evenement", i.evenement); y("edition", i.edition); y("dates_festival", i.dates_festival); y("lieu", i.lieu); y("date_evaluation", i.date_evaluation);
@@ -355,7 +357,10 @@ function exporter(a, parties) {
       else if (v) rep.push(`- ${q.q} : ${v}${q.u ? " " + q.u : ""}`);
     });
     if (rep.length) L.push("### Réponses au questionnaire", ...rep, "");
-    if (p.photos.length) L.push("### Photos", ...p.photos.map(ph => `- ${ph.nom}${ph.legende ? " — " + ph.legende : ""}`), "");
+    const ligne = ph => `- ${ph.nom}${ph.legende ? " — " + ph.legende : ""}`;
+    const ret = p.photos.filter(ph => ph.retenue), autres = p.photos.filter(ph => !ph.retenue);
+    if (ret.length) L.push("### En images", ...ret.map(ligne), "");
+    if (toutes && autres.length) L.push("### Autres photos (non retenues)", ...autres.map(ligne), "");
   }
   return L.join("\n");
 }
@@ -367,26 +372,28 @@ function vueEnvoi(a) {
     <form id="envoi">
       <fieldset class="carte cases" style="margin:0"><legend class="q-titre">Parties à envoyer</legend>
         <label><input type="checkbox" id="toutes" checked> <b>Toutes les parties</b></label>
-        ${a.parties.map(p => `<label><input type="checkbox" data-p="${p.id}" checked> ${esc(nomPartie(p))} <span class="muted">(${p.photos.length} photo·s)</span></label>`).join("") || `<p class="muted">Aucune partie.</p>`}
+        ${a.parties.map(p => `<label><input type="checkbox" data-p="${p.id}" checked> ${esc(nomPartie(p))} <span class="muted">(${p.photos.filter(ph => ph.retenue).length} photo·s retenue·s sur ${p.photos.length})</span></label>`).join("") || `<p class="muted">Aucune partie.</p>`}
       </fieldset>
+      <label class="cases" style="font-weight:normal;display:flex;gap:8px"><input type="checkbox" id="toutes-photos"> Joindre aussi les photos non retenues</label>
       <p class="muted" id="poids"></p>
       <div class="barre-bas"><button class="btn-principal" type="submit">Préparer le mail</button></div>
       <details><summary>Aperçu du texte envoyé</summary><div><pre class="apercu" id="apercu"></pre></div></details>
     </form>`;
   const f = $app.querySelector("#envoi");
   const choisies = () => a.parties.filter(p => f.querySelector(`[data-p="${p.id}"]`)?.checked);
+  const photosEnvoyees = p => p.photos.filter(ph => ph.retenue || f.querySelector("#toutes-photos").checked);
   const maj = () => {
-    const ps = choisies();
-    f.querySelector("#apercu").textContent = exporter(a, ps);
-    const mo = ps.reduce((s, p) => s + p.photos.reduce((t, ph) => t + ph.blob.size, 0), 0) / 1048576;
-    f.querySelector("#poids").textContent = `${ps.length} partie(s), ${ps.reduce((s, p) => s + p.photos.length, 0)} photo(s), environ ${mo.toFixed(1)} Mo.` + (mo > 20 ? " Attention : au-delà de 20 Mo, le mail risque d'être refusé ; envoyez en plusieurs fois." : "");
+    const ps = choisies(), toutes = f.querySelector("#toutes-photos").checked;
+    f.querySelector("#apercu").textContent = exporter(a, ps, toutes);
+    const mo = ps.reduce((s, p) => s + photosEnvoyees(p).reduce((t, ph) => t + ph.blob.size, 0), 0) / 1048576;
+    f.querySelector("#poids").textContent = `${ps.length} partie(s), ${ps.reduce((s, p) => s + photosEnvoyees(p).length, 0)} photo(s), environ ${mo.toFixed(1)} Mo.` + (mo > 20 ? " Attention : au-delà de 20 Mo, le mail risque d'être refusé ; envoyez en plusieurs fois." : "");
   };
   f.addEventListener("change", e => { if (e.target.id === "toutes") f.querySelectorAll("[data-p]").forEach(c => c.checked = e.target.checked); maj(); });
   f.addEventListener("submit", async e => {
     e.preventDefault();
     const ps = choisies(); if (!ps.length) return;
     const nomMd = `${codeAudit(a)}_audit.md`;
-    const fichiers = [new File([exporter(a, ps)], nomMd, { type: "text/markdown" }), ...ps.flatMap(p => p.photos.map(ph => new File([ph.blob], ph.nom, { type: ph.pdf ? "application/pdf" : "image/jpeg" })))];
+    const fichiers = [new File([exporter(a, ps, f.querySelector("#toutes-photos").checked)], nomMd, { type: "text/markdown" }), ...ps.flatMap(p => photosEnvoyees(p).map(ph => new File([ph.blob], ph.nom, { type: ph.pdf ? "application/pdf" : "image/jpeg" })))];
     const titre = `Audit terrain – ${a.ident.evenement || a.ident.titre || ""}`;
     if (navigator.canShare && navigator.canShare({ files: fichiers })) {
       try { await navigator.share({ files: fichiers, title: titre, text: titre }); } catch (err) { /* partage annulé */ }
